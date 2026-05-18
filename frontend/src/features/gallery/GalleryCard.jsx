@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { RefreshCw, Trash2, Clock, Wand2, X, Check } from "lucide-react";
+import { RefreshCw, Trash2, Clock, Wand2, X, Check, Expand } from "lucide-react";
+import ImageModal from "../../components/ui/ImageModal";
 
 /**
  * Format ISO timestamp to readable relative or absolute string.
@@ -87,8 +88,10 @@ function TweakPanel({ original, onRegenerate, onClose, isLoading }) {
  * Single gallery card.
  */
 export default function GalleryCard({ record, onRegenerate, onDelete, regeneratingId, deletingId }) {
-  const [tweakOpen, setTweakOpen] = useState(false);
-  const [imgLoaded, setImgLoaded] = useState(false);
+  const [tweakOpen, setTweakOpen]   = useState(false);
+  const [imgLoaded, setImgLoaded]   = useState(false);
+  const [modalOpen, setModalOpen]   = useState(false);
+  const [hovered, setHovered]       = useState(false);
 
   const isRegenerating = regeneratingId === record.id;
   const isDeleting     = deletingId === record.id;
@@ -107,8 +110,13 @@ export default function GalleryCard({ record, onRegenerate, onDelete, regenerati
       transition={{ duration: 0.3 }}
       className="card"
     >
-      {/* Image */}
-      <div style={{ position: "relative", background: "var(--color-surface-2)" }}>
+      {/* Image — clickable to open lightbox */}
+      <div
+        style={{ position: "relative", background: "var(--color-surface-2)", cursor: record.imageUrl ? "zoom-in" : "default" }}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        onClick={() => { if (record.imageUrl && imgLoaded) setModalOpen(true); }}
+      >
         {!imgLoaded && record.imageUrl && (
           <div className="skeleton" style={{ position: "absolute", inset: 0 }} />
         )}
@@ -123,7 +131,8 @@ export default function GalleryCard({ record, onRegenerate, onDelete, regenerati
               objectFit: "cover",
               display: "block",
               opacity: imgLoaded ? 1 : 0,
-              transition: "opacity 0.3s",
+              transition: "opacity 0.3s, transform 0.35s cubic-bezier(0.4,0,0.2,1)",
+              transform: hovered && imgLoaded ? "scale(1.03)" : "scale(1)",
             }}
           />
         ) : (
@@ -163,7 +172,48 @@ export default function GalleryCard({ record, onRegenerate, onDelete, regenerati
             {STYLE_LABELS[record.style] || record.style}
           </span>
         )}
+
+        {/* Hover zoom-in hint overlay */}
+        {imgLoaded && (
+          <motion.div
+            initial={false}
+            animate={{ opacity: hovered ? 1 : 0 }}
+            transition={{ duration: 0.18 }}
+            style={{
+              position: "absolute",
+              inset: 0,
+              background: "rgba(0,0,0,0.32)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              pointerEvents: "none",
+            }}
+          >
+            <div style={{
+              width: 44,
+              height: 44,
+              borderRadius: "50%",
+              background: "rgba(124,58,237,0.85)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              boxShadow: "0 0 20px rgba(124,58,237,0.5)",
+            }}>
+              <Expand size={20} color="#fff" />
+            </div>
+          </motion.div>
+        )}
       </div>
+
+      {/* Lightbox modal */}
+      <ImageModal
+        isOpen={modalOpen}
+        onClose={() => setModalOpen(false)}
+        imageUrl={record.imageUrl}
+        prompt={record.prompt}
+        style={record.style}
+        createdAt={record.createdAt}
+      />
 
       {/* Card body */}
       <div style={{ padding: "0.875rem 1rem" }}>
