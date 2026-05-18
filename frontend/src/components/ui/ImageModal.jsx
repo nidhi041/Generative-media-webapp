@@ -1,10 +1,12 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import ReactDOM from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Download, ZoomIn, Type } from "lucide-react";
+import Draggable from "react-draggable";
+import html2canvas from "html2canvas";
 
 /**
- * Fullscreen image lightbox rendered via a React Portal with lightweight editing.
+ * Fullscreen image lightbox rendered via a React Portal with lightweight draggable editing.
  *
  * Props:
  *   isOpen    {boolean}          - Controls visibility
@@ -15,21 +17,24 @@ import { X, Download, ZoomIn, Type } from "lucide-react";
  *   createdAt {string}           - ISO timestamp
  */
 export default function ImageModal({ isOpen, onClose, imageUrl, prompt, style, createdAt }) {
-  // ── Lightweight Editor State ───────────────────────────────────────────────
+  // ── Lightweight Draggable Editor State ─────────────────────────────────────
   const [isEditing, setIsEditing]       = useState(false);
   const [overlayText, setOverlayText]   = useState("");
-  const [overlayPos, setOverlayPos]     = useState("bottom"); // "top", "center", "bottom"
-  const [overlaySize, setOverlaySize]   = useState("medium"); // "small", "medium", "large"
-  const [overlayColor, setOverlayColor] = useState("#ffffff"); // white, yellow, pink, black
+  const [overlaySize, setOverlaySize]   = useState("medium"); // "small", "medium", "large", "xlarge"
+  const [overlayColor, setOverlayColor] = useState("#ffffff"); // white, yellow, pink, purple, black
+  const [dragPos, setDragPos]           = useState({ x: 0, y: 0 });
+  const [isCapturing, setIsCapturing]   = useState(false);
+  const nodeRef                         = useRef(null);
 
   // Reset editor state when modal opens
   useEffect(() => {
     if (isOpen) {
       setIsEditing(false);
       setOverlayText("");
-      setOverlayPos("bottom");
       setOverlaySize("medium");
       setOverlayColor("#ffffff");
+      setDragPos({ x: 0, y: 0 });
+      setIsCapturing(false);
     }
   }, [isOpen]);
 
@@ -50,8 +55,8 @@ export default function ImageModal({ isOpen, onClose, imageUrl, prompt, style, c
     };
   }, [isOpen, handleKeyDown]);
 
-  // ── Download helper with Canvas Text Burning ───────────────────────────────
-  const handleDownload = () => {
+  // ── Download helper with html2canvas Export ────────────────────────────────
+  const handleDownload = async () => {
     if (!imageUrl) return;
 
     // If no overlay text, download directly
@@ -63,46 +68,21 @@ export default function ImageModal({ isOpen, onClose, imageUrl, prompt, style, c
       return;
     }
 
-    // Otherwise, burn the text into the image using an in-memory canvas
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.src = imageUrl;
-    img.onload = () => {
-      const canvas = document.createElement("canvas");
-      canvas.width = img.naturalWidth || img.width;
-      canvas.height = img.naturalHeight || img.height;
-      const ctx = canvas.getContext("2d");
+    // Use html2canvas to export the wrapper element containing the image and the dragged overlay
+    const element = document.getElementById("export-image-wrapper");
+    if (!element) return;
 
-      // Draw original image
-      ctx.drawImage(img, 0, 0);
+    try {
+      setIsCapturing(true);
+      // Wait a brief tick for React state to update the DOM (removing borders/backgrounds)
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
-      // Scale font size relative to image height
-      const ratio = overlaySize === "small" ? 0.04 : overlaySize === "medium" ? 0.06 : 0.09;
-      const baseSize = Math.max(24, canvas.height * ratio);
-      ctx.font = `bold ${baseSize}px sans-serif`;
-      ctx.fillStyle = overlayColor;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-
-      // Add shadow/glow for readability against various backgrounds
-      ctx.shadowColor = overlayColor === "#000000" ? "rgba(255,255,255,0.8)" : "rgba(0,0,0,0.85)";
-      ctx.shadowBlur = baseSize * 0.3;
-      ctx.shadowOffsetX = 0;
-      ctx.shadowOffsetY = baseSize * 0.08;
-
-      // Calculate Y position
-      let y = canvas.height * 0.9; // bottom
-      if (overlayPos === "top") y = canvas.height * 0.12;
-      if (overlayPos === "center") y = canvas.height * 0.5;
-
-      const lines = overlayText.split("\n");
-      const lineHeight = baseSize * 1.2;
-      const startY = y - ((lines.length - 1) * lineHeight) / 2;
-
-      lines.forEach((line, index) => {
-        // Draw text twice for a stronger shadow/fill effect
-        ctx.fillText(line, canvas.width / 2, startY + index * lineHeight);
-        ctx.fillText(line, canvas.width / 2, startY + index * lineHeight);
+      const canvas = await html2canvas(element, {
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: null,
+        scale: 2, // High-quality export
+        logging: false,
       });
 
       const dataUrl = canvas.toDataURL("image/jpeg", 0.95);
@@ -110,7 +90,11 @@ export default function ImageModal({ isOpen, onClose, imageUrl, prompt, style, c
       a.href = dataUrl;
       a.download = `genmedia-edited-${Date.now()}.jpg`;
       a.click();
-    };
+    } catch (err) {
+      console.error("Export error:", err);
+    } finally {
+      setIsCapturing(false);
+    }
   };
 
   // ── Stop propagation so inner panel click doesn't close modal ──────────────
@@ -218,10 +202,11 @@ export default function ImageModal({ isOpen, onClose, imageUrl, prompt, style, c
                   onClick={handleDownload}
                   className="btn-ghost"
                   title="Download image"
-                  style={{ padding: "0.4rem 0.75rem", fontSize: "0.8rem" }}
+                  disabled={isCapturing}
+                  style={{ padding: "0.4rem 0.75rem", fontSize: "0.8rem", opacity: isCapturing ? 0.5 : 1 }}
                 >
                   <Download size={14} />
-                  Save
+                  {isCapturing ? "Saving…" : "Save"}
                 </button>
 
                 {/* Close */}
@@ -265,18 +250,7 @@ export default function ImageModal({ isOpen, onClose, imageUrl, prompt, style, c
                     style={{ flex: "1 1 200px", padding: "0.45rem 0.75rem", fontSize: "0.85rem" }}
                   />
 
-                  <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-                    <select
-                      className="input-base"
-                      value={overlayPos}
-                      onChange={(e) => setOverlayPos(e.target.value)}
-                      style={{ padding: "0.45rem 0.6rem", fontSize: "0.8rem" }}
-                    >
-                      <option value="top">Top</option>
-                      <option value="center">Center</option>
-                      <option value="bottom">Bottom</option>
-                    </select>
-
+                  <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
                     <select
                       className="input-base"
                       value={overlaySize}
@@ -286,6 +260,7 @@ export default function ImageModal({ isOpen, onClose, imageUrl, prompt, style, c
                       <option value="small">Small</option>
                       <option value="medium">Medium</option>
                       <option value="large">Large</option>
+                      <option value="xlarge">Extra Large</option>
                     </select>
 
                     <select
@@ -297,8 +272,24 @@ export default function ImageModal({ isOpen, onClose, imageUrl, prompt, style, c
                       <option value="#ffffff">White</option>
                       <option value="#facc15">Yellow</option>
                       <option value="#ec4899">Pink</option>
+                      <option value="#a855f7">Purple</option>
                       <option value="#000000">Black</option>
                     </select>
+
+                    {overlayText && (
+                      <button
+                        onClick={() => setDragPos({ x: 0, y: 0 })}
+                        className="btn-ghost"
+                        title="Reset drag position"
+                        style={{ padding: "0.4rem 0.6rem", fontSize: "0.75rem" }}
+                      >
+                        Reset Pos
+                      </button>
+                    )}
+
+                    <span style={{ fontSize: "0.75rem", color: "var(--color-accent-2)", marginLeft: "0.5rem", display: "flex", alignItems: "center", gap: "0.25rem" }}>
+                      💡 Drag text on image to position
+                    </span>
                   </div>
                 </motion.div>
               )}
@@ -318,11 +309,13 @@ export default function ImageModal({ isOpen, onClose, imageUrl, prompt, style, c
               }}
             >
               <div
+                id="export-image-wrapper"
                 style={{
                   position: "relative",
                   display: "inline-block",
                   maxWidth: "100%",
                   maxHeight: "calc(90vh - 130px)",
+                  margin: "0 auto",
                 }}
               >
                 <motion.img
@@ -342,28 +335,42 @@ export default function ImageModal({ isOpen, onClose, imageUrl, prompt, style, c
                   draggable={false}
                 />
 
-                {/* Live Text Overlay */}
+                {/* Live Draggable Text Overlay */}
                 {overlayText && (
-                  <div
-                    style={{
-                      position: "absolute",
-                      left: "5%",
-                      right: "5%",
-                      top: overlayPos === "top" ? "8%" : overlayPos === "center" ? "50%" : "auto",
-                      bottom: overlayPos === "bottom" ? "8%" : "auto",
-                      transform: overlayPos === "center" ? "translateY(-50%)" : "none",
-                      textAlign: "center",
-                      color: overlayColor,
-                      fontSize: overlaySize === "small" ? "1.25rem" : overlaySize === "medium" ? "1.75rem" : "2.5rem",
-                      fontWeight: 700,
-                      textShadow: overlayColor === "#000000" ? "0 2px 8px rgba(255,255,255,0.8)" : "0 2px 12px rgba(0,0,0,0.85), 0 0 4px rgba(0,0,0,0.6)",
-                      pointerEvents: "none",
-                      wordBreak: "break-word",
-                      padding: "0 1rem",
-                    }}
+                  <Draggable
+                    nodeRef={nodeRef}
+                    bounds="parent"
+                    onDrag={(e, data) => setDragPos({ x: data.x, y: data.y })}
+                    position={dragPos}
+                    disabled={isCapturing}
                   >
-                    {overlayText}
-                  </div>
+                    <div
+                      ref={nodeRef}
+                      style={{
+                        position: "absolute",
+                        top: "40%",
+                        left: "20%",
+                        cursor: isCapturing ? "default" : "move",
+                        color: overlayColor,
+                        fontSize: overlaySize === "small" ? "1.25rem" : overlaySize === "medium" ? "1.75rem" : overlaySize === "large" ? "2.5rem" : "3.25rem",
+                        fontWeight: 700,
+                        textShadow: overlayColor === "#000000" ? "0 2px 8px rgba(255,255,255,0.8)" : "0 2px 12px rgba(0,0,0,0.85), 0 0 4px rgba(0,0,0,0.6)",
+                        userSelect: "none",
+                        padding: "0.5rem 1rem",
+                        border: isCapturing ? "1px solid transparent" : isEditing ? "1px dashed rgba(255,255,255,0.6)" : "1px solid transparent",
+                        borderRadius: "0.5rem",
+                        background: isCapturing ? "transparent" : isEditing ? "rgba(0,0,0,0.25)" : "transparent",
+                        backdropFilter: isCapturing ? "none" : isEditing ? "blur(4px)" : "none",
+                        maxWidth: "60%",
+                        wordBreak: "break-word",
+                        textAlign: "center",
+                        zIndex: 20,
+                        boxShadow: isCapturing ? "none" : isEditing ? "0 4px 12px rgba(0,0,0,0.3)" : "none",
+                      }}
+                    >
+                      {overlayText}
+                    </div>
+                  </Draggable>
                 )}
               </div>
             </div>
