@@ -4,6 +4,11 @@ A web application for generating, managing, and tweaking AI-generated imagery. I
 
 ---
 
+## Live Deployment
+
+- Frontend: https://generative-media-webapp-6fe4.vercel.app/
+- Backend API: https://generative-media-webapp.onrender.com
+
 ## Product Vision & Motivation
 
 The goal of GenMedia is to bridge the gap between raw AI inference APIs and an intuitive creative tool. Direct interactions with external AI generation APIs often surface latency, cold starts, and rigid inputs directly to the user. This project addresses those constraints by treating **async states and slow-model UX as first-class product concerns**. 
